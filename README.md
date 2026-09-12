@@ -1,0 +1,117 @@
+# data-insight-report
+
+A [Claude Skill](https://www.anthropic.com/news/skills) that turns a raw,
+messy tabular file (CSV / Excel) into a cleaned dataset and a visual
+insight report — automatically, without a person writing pandas code by
+hand for every new file.
+
+Give Claude a spreadsheet and a request like *"clean this up and tell me
+what's going on"*, and this skill drives a two-stage pipeline: a
+deterministic cleaning pass, then chart generation, then Claude adds the
+actual analysis on top.
+
+## Why a "skill" instead of just asking an LLM to write pandas code each time
+
+Two different kinds of decisions are involved in "analyze this data":
+
+1. **Mechanical decisions** — is this row an exact duplicate? Is `"USA "`
+   the same as `"USA"`? Is `$1,200.00` actually the number 1200? These
+   should be answered the *same way every time*. Left to free-form
+   reasoning, an LLM will make slightly different calls on every run —
+   sometimes stripping whitespace, sometimes not; sometimes imputing a
+   missing value, sometimes flagging it. That inconsistency is exactly
+   what a bundled, deterministic script eliminates.
+2. **Judgment decisions** — is that missing value worth worrying about
+   for this dataset? Is this outlier a data-entry error or the most
+   interesting row in the table? Those need context and understanding of
+   what the person actually wants — that's where the LLM's reasoning adds
+   real value, and where a script would just be guessing.
+
+The skill is designed around that split: `scripts/clean_data.py` handles
+(1) and produces a structured `clean_report.json` of exactly what it did
+and didn't touch; the model handles (2) by reading that report and
+deciding what's worth surfacing.
+
+## What's in here
+
+```
+data-insight-report/
+├── SKILL.md                    # the skill definition Claude reads
+├── scripts/
+│   ├── clean_data.py            # deterministic cleaning pass
+│   └── build_report.py          # chart selection + HTML report generation
+├── references/
+│   └── chart_selection.md       # documents the chart-selection logic
+└── examples/
+    ├── sample_sales.csv         # a deliberately messy example input
+    ├── sample_report.html       # the report generated from it
+    └── sample_clean_report.json # the cleaning summary for that run
+```
+
+## Example
+
+`examples/sample_sales.csv` is a small sales dataset seeded with the kind
+of mess real exports actually have: a duplicated row, `"USA "` vs `"USA"`,
+revenue stored as `"$1,200.00"` text, one missing revenue value, and one
+outlier order. Running the pipeline on it:
+
+```bash
+python scripts/clean_data.py examples/sample_sales.csv /tmp/out
+python scripts/build_report.py /tmp/out/cleaned.csv /tmp/out/clean_report.json /tmp/out/report.html --title "Sample Sales Report"
+```
+
+produces `clean_report.json` showing exactly what changed:
+
+```json
+{
+  "actions": [
+    {"type": "strip_whitespace", "columns": ["region"]},
+    {"type": "drop_exact_duplicates", "count": 1},
+    {"type": "coerce_to_numeric", "column": "revenue", "success_rate": 1.0}
+  ],
+  "flagged": [
+    {"type": "missing_values", "detail": {"revenue": 1}},
+    {"type": "outliers", "column": "revenue", "count": 2, "bounds": [-320.9, 2108.6]}
+  ]
+}
+```
+
+...and `report.html`, a single self-contained file (charts embedded as
+base64 PNGs — nothing external to host) with a distribution histogram per
+numeric column, a top-values bar chart per categorical column, a
+correlation heatmap, and a time-series chart since the data has a date
+column. See `examples/sample_report.html`.
+
+## Using it as a Claude Code skill
+
+Copy (or symlink) this folder into your skills directory:
+
+```bash
+cp -r data-insight-report ~/.claude/skills/
+```
+
+Then in Claude Code, just hand it a data file: *"analyze sales.csv and
+tell me what's interesting in it"*. Claude reads `SKILL.md`, runs the two
+scripts, and writes the narrative on top of what they find.
+
+## Running the scripts standalone
+
+They don't require Claude at all — they're plain Python:
+
+```bash
+pip install -r requirements.txt
+python scripts/clean_data.py <input.csv|.xlsx> <output_dir>
+python scripts/build_report.py <output_dir>/cleaned.csv <output_dir>/clean_report.json <output_dir>/report.html --title "My Report"
+```
+
+## Design notes / things deliberately left alone
+
+- **Missing values are never silently imputed.** They're counted and
+  reported so a human (or the model, reasoning about the specific
+  dataset) decides what to do.
+- **Outliers are flagged, not removed.** An extreme value in a
+  business dataset is often the most important row, not noise.
+- **No pie charts.** Bar charts are easier to read accurately.
+
+See `references/chart_selection.md` for the full reasoning behind chart
+selection, and `SKILL.md` for how Claude is instructed to use all of this.

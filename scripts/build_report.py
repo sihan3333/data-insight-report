@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""
+build_report.py — turns a cleaned dataset + clean_report.json into a single
+self-contained HTML report (charts embedded as base64 PNGs, no external
+files needed to view it).
+
+Why a script and not free-form chart code each time: the chart *selection*
+logic (which columns get a histogram vs a bar chart vs a correlation
+heatmap) is a mechanical decision based on dtype and cardinality — doing
+it in code guarantees consistent, sane choices instead of re-deriving them
+from scratch (and re-writing boilerplate matplotlib setup) on every run.
+
+Usage:
+    python build_report.py <cleaned_csv> <clean_report_json> <output_html> [--title "My Report"]
+"""
+import argparse
+import base64
+import io
+import json
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+# A small, colorblind-friendly categorical palette — swap for brand colors
+# if this report needs to match a specific look.
+PALETTE = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
+MAX_NUMERIC_CHARTS = 6
+MAX_CATEGORICAL_CHARTS = 4
+MAX_CATEGORY_BARS = 10
+
+
+def fig_to_base64(fig) -> str:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def detect_datetime_column(df: pd.DataFrame):
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            return c
+        if df[c].dtype == object:
+            sample = df[c].dropna().head(20)
+            if len(sample) == 0:
+                continue
+            parsed = pd.to_datetime(sample, errors="coerce", format=None)
+            if parsed.notna().mean() > 0.9:
+                return c
+    return None
+
+
+def build_charts(df: pd.DataFrame) -> list[dict]:
+    charts = []
+    numeric_cols = [c for c in df.select_dtypes(include=[np.number]).columns]
+    categorical_cols = [
+        c for c in df.select_dtypes(include=["object", "string"]).columns
+        if 1 < df[c].nunique(dropna=True) <= 30
+    ]
+    date_col = detect_datetime_column(df)
+
+    # Time series first — usually the headline story if a date exists.
+    if date_col and numeric_cols:
+        dates = pd.to_datetime(df[date_col], errors="coerce")
+        metric = numeric_cols[0]
+        series = df.assign(_date=dates).dropna(subset=["_date"]).sort_values("_date")
+        if len(series) >= 3:
+            fig, ax = plt.subplots(figsize=(7, 3.2))
+            ax.plot(series["_date"], series[metric], color=PALETTE[0], linewidth=1.8)
+            ax.set_title(f"{metric} over time")
+            ax.set_xlabel(date_col)
+            ax.set_ylabel(metric)
+            fig.autofmt_xdate()
+            charts.append({
+                "title": f"{metric} over time",
+                "img": fig_to_base64(fig),
+                "note": f"Trend of {metric} ordered by {date_col}.",
+            })
+
+    # Distributions for numeric columns.
+    for c in numeric_cols[:MAX_NUMERIC_CHARTS]:
+        series = df[c].dropna()
+        if series.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(5, 3))
+        ax.hist(series, bins=min(30, max(5, int(len(series) ** 0.5))), color=PALETTE[1])
+        ax.set_title(f"Distribution of {c}")
+        ax.set_xlabel(c)
+        ax.set_ylabel("count")
+        charts.append({
+            "title": f"Distribution of {c}",
+            "img": fig_to_base64(fig),
+            "note": f"mean={series.mean():.2f}, median={series.median():.2f}, std={series.std():.2f}",
+        })
+
+    # Top categories for categorical columns.
+    for c in categorical_cols[:MAX_CATEGORICAL_CHARTS]:
+        counts = df[c].value_counts().head(MAX_CATEGORY_BARS)
+        fig, ax = plt.subplots(figsize=(5, 3))
+        ax.barh(counts.index.astype(str)[::-1], counts.values[::-1], color=PALETTE[2])
+        ax.set_title(f"Top values of {c}")
+        ax.set_xlabel("count")
+        charts.append({
+            "title": f"Top values of {c}",
+            "img": fig_to_base64(fig),
+            "note": f"{df[c].nunique()} distinct values total; showing top {min(MAX_CATEGORY_BARS, df[c].nunique())}.",
+        })
+
+    # Correlation heatmap if there's enough numeric structure to show.
+    if len(numeric_cols) >= 3:
+        corr = df[numeric_cols].corr(numeric_only=True)
+        fig, ax = plt.subplots(figsize=(5.5, 4.5))
+        im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_xticks(range(len(corr.columns)))
+        ax.set_xticklabels(corr.columns, rotation=45, ha="right")
+        ax.set_yticks(range(len(corr.columns)))
+        ax.set_yticklabels(corr.columns)
+        fig.colorbar(im, ax=ax, shrink=0.8)
+        ax.set_title("Correlation between numeric columns")
+        charts.append({
+            "title": "Correlation heatmap",
+            "img": fig_to_base64(fig),
+            "note": "Pearson correlation; values near ±1 indicate a strong linear relationship.",
+        })
+
+    return charts
+
+
+HTML_TEMPLATE = """<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  :root {{ color-scheme: light; }}
+  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#f7f7f8; color:#1d1d1f; margin:0; }}
+  .wrap {{ max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }}
+  h1 {{ font-size: 26px; margin-bottom: 4px; }}
+  .subtitle {{ color:#6b6b70; margin-top:0; margin-bottom:28px; }}
+  .card {{ background:#fff; border:1px solid #e4e4e7; border-radius:12px; padding:20px 24px; margin-bottom:20px; }}
+  .card h2 {{ font-size:16px; margin-top:0; }}
+  .grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px; }}
+  .grid .card img {{ max-width:100%; display:block; }}
+  .note {{ font-size:13px; color:#6b6b70; margin-top:8px; }}
+  table {{ border-collapse: collapse; width:100%; font-size:13px; }}
+  th, td {{ text-align:left; padding:6px 10px; border-bottom:1px solid #eee; }}
+  ul {{ margin:6px 0; padding-left: 20px; }}
+  .tag {{ display:inline-block; background:#eef2ff; color:#3730a3; border-radius:6px; padding:2px 8px; font-size:12px; margin:2px 4px 2px 0; }}
+  .tag.flag {{ background:#fef2f2; color:#991b1b; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{title}</h1>
+  <p class="subtitle">{subtitle}</p>
+
+  <div class="card">
+    <h2>Data cleaning summary</h2>
+    {cleaning_html}
+  </div>
+
+  <div class="card">
+    <h2>Overview</h2>
+    {overview_html}
+  </div>
+
+  <div class="grid">
+    {charts_html}
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
+def render_cleaning_html(report: dict) -> str:
+    parts = []
+    parts.append(f"<p>{report['rows_in']} rows in &rarr; {report['rows_out']} rows out.</p>")
+    if report["actions"]:
+        parts.append("<p><strong>Auto-fixed:</strong></p><div>")
+        for a in report["actions"]:
+            parts.append(f'<span class="tag">{json.dumps(a, default=str)}</span>')
+        parts.append("</div>")
+    if report["flagged"]:
+        parts.append("<p><strong>Flagged for your review (not auto-changed):</strong></p><div>")
+        for f in report["flagged"]:
+            parts.append(f'<span class="tag flag">{json.dumps(f, default=str)}</span>')
+        parts.append("</div>")
+    if not report["actions"] and not report["flagged"]:
+        parts.append("<p>No issues found — data was already clean.</p>")
+    return "\n".join(parts)
+
+
+def render_overview_html(df: pd.DataFrame) -> str:
+    rows = [f"<tr><td>Rows</td><td>{len(df)}</td></tr>",
+            f"<tr><td>Columns</td><td>{len(df.columns)}</td></tr>"]
+    dtypes = df.dtypes.astype(str).to_dict()
+    dtype_list = ", ".join(f"{k} ({v})" for k, v in list(dtypes.items())[:12])
+    rows.append(f"<tr><td>Column types</td><td>{dtype_list}</td></tr>")
+    return f"<table>{''.join(rows)}</table>"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cleaned_csv")
+    ap.add_argument("clean_report_json")
+    ap.add_argument("output_html")
+    ap.add_argument("--title", default="Data Insight Report")
+    args = ap.parse_args()
+
+    df = pd.read_csv(args.cleaned_csv)
+    report = json.loads(Path(args.clean_report_json).read_text(encoding="utf-8"))
+
+    charts = build_charts(df)
+    charts_html = "\n".join(
+        f'<div class="card"><h2>{c["title"]}</h2>'
+        f'<img src="data:image/png;base64,{c["img"]}" />'
+        f'<div class="note">{c["note"]}</div></div>'
+        for c in charts
+    )
+
+    html = HTML_TEMPLATE.format(
+        title=args.title,
+        subtitle=f"Generated from {Path(args.cleaned_csv).name} · {len(df)} rows · {len(df.columns)} columns",
+        cleaning_html=render_cleaning_html(report),
+        overview_html=render_overview_html(df),
+        charts_html=charts_html or "<p>No charts could be generated from this dataset.</p>",
+    )
+
+    Path(args.output_html).write_text(html, encoding="utf-8")
+    print(f"wrote {args.output_html} with {len(charts)} charts")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,65 @@
+{
+  "rows_in": 20,
+  "columns": [
+    "order_id",
+    "order_date",
+    "region",
+    "product",
+    "revenue",
+    "cost",
+    "quantity"
+  ],
+  "actions": [
+    {
+      "type": "strip_whitespace",
+      "columns": [
+        "region"
+      ]
+    },
+    {
+      "type": "drop_exact_duplicates",
+      "count": 1
+    },
+    {
+      "type": "coerce_to_numeric",
+      "column": "revenue",
+      "success_rate": 1.0
+    }
+  ],
+  "flagged": [
+    {
+      "type": "missing_values",
+      "detail": {
+        "revenue": 1
+      }
+    },
+    {
+      "type": "outliers",
+      "column": "revenue",
+      "count": 2,
+      "bounds": [
+        -320.938,
+        2108.562
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "cost",
+      "count": 1,
+      "bounds": [
+        -64.0,
+        1320.0
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "quantity",
+      "count": 1,
+      "bounds": [
+        -0.5,
+        19.5
+      ]
+    }
+  ],
+  "rows_out": 19
+}
