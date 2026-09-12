@@ -1,0 +1,33 @@
+{
+  "skill_name": "data-insight-report",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "support-tickets",
+      "prompt": "这是我们客服系统导出的工单数据(support_tickets.csv),麻烦帮我看看数据质量怎么样,顺便做个分析报告,我想知道有没有什么问题或者规律。",
+      "expected_output": "A cleaned dataset + report noting: 1 exact duplicate row, 1 resolution-time outlier, the channel casing inconsistency, and the two co-located missing values — plus a chart-bearing report file.",
+      "files": ["support_tickets.csv"],
+      "assertions": [
+        "Notes or corrects the exact duplicate ticket row (T-2010 appears twice)",
+        "Flags the outlier resolution time (T-2007, 26 hours vs a ~0.5-5 hour baseline)",
+        "Notices the channel casing inconsistency ('chat' vs 'Chat') as a data quality issue, not just whitespace",
+        "Reports the two missing values (resolution_hours and satisfaction_score, both on T-2004) rather than silently filling them in",
+        "Produces a report file with at least one chart, not just a text summary"
+      ]
+    },
+    {
+      "id": 1,
+      "eval_name": "titanic",
+      "prompt": "帮我分析一下这份泰坦尼克号乘客数据(titanic.csv),想了解生还率跟哪些因素有关,顺便看看数据本身干不干净。",
+      "expected_output": "A report that does not chart PassengerId as a measurement, correctly summarizes Age/Cabin missingness, and reports the real survival-rate gaps by sex and class.",
+      "files": ["titanic.csv"],
+      "assertions": [
+        "Does not present PassengerId as a meaningful numeric distribution/measurement",
+        "Reports missing Age (~177 of 891, ~20%) and missing Cabin (~687 of 891, ~77%) roughly correctly",
+        "States survival rate differs by sex with roughly correct direction/magnitude (women much higher than men, ~74% vs ~19%)",
+        "States survival rate differs by class with roughly correct direction (1st class higher than 3rd, ~63% vs ~24%)",
+        "Produces a report file with at least one chart, not just a text summary"
+      ]
+    }
+  ]
+}

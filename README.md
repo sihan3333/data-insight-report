@@ -18,11 +18,12 @@ Two different kinds of decisions are involved in "analyze this data":
 
 1. **Mechanical decisions** — is this row an exact duplicate? Is `"USA "`
    the same as `"USA"`? Is `$1,200.00` actually the number 1200? These
-   should be answered the *same way every time*. Left to free-form
-   reasoning, an LLM will make slightly different calls on every run —
-   sometimes stripping whitespace, sometimes not; sometimes imputing a
-   missing value, sometimes flagging it. That inconsistency is exactly
-   what a bundled, deterministic script eliminates.
+   should be answered the *same way every time*, and a bundled
+   deterministic script guarantees that by construction rather than
+   leaving it to be re-decided on every run. (An eval comparing this
+   skill against an LLM writing the same cleaning logic from scratch each
+   time found that claim harder to prove empirically than expected —
+   see "Benchmarked against a baseline" below for the honest version.)
 2. **Judgment decisions** — is that missing value worth worrying about
    for this dataset? Is this outlier a data-entry error or the most
    interesting row in the table? Those need context and understanding of
@@ -103,6 +104,51 @@ column where every value is distinct — rather than relying on anyone to
 remember to check column names by hand. Small case study in why testing
 against real data (not just data written to satisfy your own test cases)
 matters.
+
+## Benchmarked against a baseline (with vs. without the skill)
+
+Rather than assume the skill is better because it exists, it was compared
+against the same model (Sonnet 5) doing the identical task with no skill
+— just its own judgment and code written from scratch — across two
+rounds of real subagent runs (not simulated). Full run outputs, grading,
+and notes: `evals/evals.json` and the workspace directories under
+`data-insight-report-workspace/` (not committed here, but reproducible —
+see "Running an eval yourself" below).
+
+**What held up across both rounds: efficiency.** Using the bundled,
+already-debugged scripts instead of authoring pandas/matplotlib code from
+scratch every time was consistently cheaper and faster:
+
+| | Round 1 (2 evals) | Round 2 (1 eval, repeated) |
+|---|---|---|
+| Tokens | ~22-24% fewer | ~8% fewer |
+| Time | ~34-40% less | ~47% less |
+
+**What did NOT hold up: a "consistency" advantage.** Round 1 showed the
+baseline impute missing values on one eval (Titanic) but decline to on
+another (support tickets), and it was tempting to read that as "an LLM's
+policy drifts run to run, the skill fixes that." Round 2 tested this
+directly — the same baseline, run 4 independent times on a fresh dataset
+with the identical prompt — and it declined to impute all 4 times,
+matching the skill's behavior exactly. The apparent inconsistency in
+round 1 looks more like Titanic specifically priming "prepare data for a
+model" instincts than genuine run-to-run randomness. Correcting the
+record here rather than keeping the more flattering version.
+
+**Where both configurations tied: correctness.** On both rounds' factual
+assertions (right missing-value counts, right survival-rate numbers,
+avoiding a meaningless ID-column chart), the baseline matched the skill
+5/5 and 2/2. Sonnet 5 is strong enough to get these specific facts right
+unaided — the skill's value here is guaranteeing that behavior by
+construction, not rescuing a weaker model, which is a real but more
+modest claim than "the skill produces better analysis."
+
+The honest takeaway: this skill's proven value is running faster and
+cheaper on repeated invocations, plus giving reproducible cleaning rules
+you can read and audit in code rather than trust to a model's judgment
+call each time. It has not been shown (yet) to produce more consistent
+or more correct output than a capable model working unaided — that would
+need a larger eval to actually claim.
 
 ## Using it as a Claude Code skill
 
