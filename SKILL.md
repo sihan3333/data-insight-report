@@ -94,11 +94,15 @@ separate: run the cleaning script, then reason freely over what it found.
 - **No numeric columns at all**: the charts will lean on categorical bar
   charts only — that's fine, don't force a histogram onto nothing.
 - **A column that's actually an ID** (unique per row, e.g. `user_id`,
-  `order_number`): `build_report.py` will treat a numeric-looking ID as a
-  numeric column and histogram it, which is meaningless. Skim the column
-  names before generating the report and consider dropping obvious ID
-  columns from the numeric analysis, or note in your narrative that the
-  "distribution" of an ID column isn't informative.
+  `order_number`): `build_report.py` detects this automatically (every
+  non-null value distinct) and excludes it from the numeric charts,
+  noting it in the overview instead of silently dropping it. You don't
+  need to catch this by hand — this was originally a "remember to check
+  column names" instruction, found to be an actual problem (not just a
+  hypothetical one) the first time this skill ran against a real dataset
+  (Titanic's `PassengerId` both got a meaningless histogram and crowded a
+  more interesting column out of the chart cap), and fixed structurally
+  instead of relying on every future run to remember it.
 - **Sensitive data** (names, emails, financial account numbers): don't
   put raw sensitive values into chart labels or the narrative beyond what's
   needed to make the point — aggregate instead of exposing rows.

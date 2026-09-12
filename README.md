@@ -82,6 +82,26 @@ numeric column, a top-values bar chart per categorical column, a
 correlation heatmap, and a time-series chart since the data has a date
 column. See `examples/sample_report.html`.
 
+## Tested against a real dataset, not just synthetic examples
+
+`examples/sample_sales.csv` was hand-built to exercise specific cleaning
+rules. To check the skill actually holds up outside of that, it was also
+run against the [Titanic passenger
+dataset](https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv)
+(891 real historical records, genuinely messy — 20% of `Age` values and
+77% of `Cabin` values are missing) — see `examples/titanic.csv` and
+`examples/titanic_report.html`.
+
+This surfaced a real bug the synthetic example never would have:
+`PassengerId` (a row identifier, numeric but meaningless to plot) got
+histogrammed as if it were a measurement, *and* crowded a genuinely
+interesting column (`Fare`) out of the capped chart slots. Fixed in
+`build_report.py` by detecting ID-like columns structurally — any numeric
+column where every value is distinct — rather than relying on anyone to
+remember to check column names by hand. Small case study in why testing
+against real data (not just data written to satisfy your own test cases)
+matters.
+
 ## Using it as a Claude Code skill
 
 Copy (or symlink) this folder into your skills directory:

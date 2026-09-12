@@ -1,0 +1,63 @@
+{
+  "rows_in": 891,
+  "columns": [
+    "PassengerId",
+    "Survived",
+    "Pclass",
+    "Name",
+    "Sex",
+    "Age",
+    "SibSp",
+    "Parch",
+    "Ticket",
+    "Fare",
+    "Cabin",
+    "Embarked"
+  ],
+  "actions": [
+    {
+      "type": "strip_whitespace",
+      "columns": [
+        "Name"
+      ]
+    }
+  ],
+  "flagged": [
+    {
+      "type": "missing_values",
+      "detail": {
+        "Age": 177,
+        "Cabin": 687,
+        "Embarked": 2
+      }
+    },
+    {
+      "type": "outliers",
+      "column": "Age",
+      "count": 11,
+      "bounds": [
+        -6.688,
+        64.812
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "SibSp",
+      "count": 46,
+      "bounds": [
+        -1.5,
+        2.5
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "Fare",
+      "count": 116,
+      "bounds": [
+        -26.724,
+        65.634
+      ]
+    }
+  ],
+  "rows_out": 891
+}

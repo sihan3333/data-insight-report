@@ -19,11 +19,18 @@ extend it or explain a choice without re-reading the code line by line.
 - **No pie charts.** Bar charts are easier to compare accurately; pies are
   avoided per general chart-design practice, not because they're
   unsupported.
-- **No forced chart on ID-like numeric columns.** The script can't
-  reliably detect an ID column by dtype alone (a customer ID is numeric,
-  unique, and meaningless to histogram) — that's called out in SKILL.md
-  as something to catch by reading column names before running the report
-  generator.
+- **No forced chart on ID-like numeric columns.** A numeric column where
+  every non-null value is unique (customer ID, order number, row index)
+  is structurally detected in `split_id_like_columns()` and excluded from
+  the numeric distribution charts and the correlation heatmap — it's
+  noted in the report's overview instead of silently vanishing. This was
+  originally left as a "remember to check the column names" note for
+  whoever runs the report, until testing against a real dataset (Titanic)
+  showed it wasn't a hypothetical edge case: `PassengerId` got histogrammed
+  *and* pushed a more informative column (`Fare`) out of the capped chart
+  slots. Detecting structurally (uniqueness) rather than by name works
+  regardless of naming convention or language, and needs no one to
+  remember anything.
 
 ## Extending it
 

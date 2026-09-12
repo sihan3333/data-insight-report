@@ -54,9 +54,27 @@ def detect_datetime_column(df: pd.DataFrame):
     return None
 
 
-def build_charts(df: pd.DataFrame) -> list[dict]:
+def split_id_like_columns(df: pd.DataFrame, numeric_cols: list[str]) -> tuple[list[str], list[str]]:
+    """A numeric column where every non-null value is unique (PassengerId,
+    order_id, ...) is almost never meaningful to histogram — it's an
+    identifier, not a measurement. Pull those out so they don't waste one
+    of the limited chart slots on a flat, uninformative bar. Detected
+    structurally (every value distinct) rather than by column name, so it
+    works regardless of naming convention or language."""
+    id_like, real = [], []
+    for c in numeric_cols:
+        non_null = df[c].dropna()
+        if len(non_null) > 1 and non_null.nunique() == len(non_null):
+            id_like.append(c)
+        else:
+            real.append(c)
+    return real, id_like
+
+
+def build_charts(df: pd.DataFrame) -> tuple[list[dict], list[str]]:
     charts = []
     numeric_cols = [c for c in df.select_dtypes(include=[np.number]).columns]
+    numeric_cols, id_like_cols = split_id_like_columns(df, numeric_cols)
     categorical_cols = [
         c for c in df.select_dtypes(include=["object", "string"]).columns
         if 1 < df[c].nunique(dropna=True) <= 30
@@ -126,6 +144,8 @@ def build_charts(df: pd.DataFrame) -> list[dict]:
             "img": fig_to_base64(fig),
             "note": "Pearson correlation; values near ±1 indicate a strong linear relationship.",
         })
+
+    return charts, id_like_cols
 
     return charts
 
@@ -198,13 +218,21 @@ def render_cleaning_html(report: dict) -> str:
     return "\n".join(parts)
 
 
-def render_overview_html(df: pd.DataFrame) -> str:
+def render_overview_html(df: pd.DataFrame, id_like_cols: list[str]) -> str:
     rows = [f"<tr><td>Rows</td><td>{len(df)}</td></tr>",
             f"<tr><td>Columns</td><td>{len(df.columns)}</td></tr>"]
     dtypes = df.dtypes.astype(str).to_dict()
     dtype_list = ", ".join(f"{k} ({v})" for k, v in list(dtypes.items())[:12])
     rows.append(f"<tr><td>Column types</td><td>{dtype_list}</td></tr>")
-    return f"<table>{''.join(rows)}</table>"
+    html = f"<table>{''.join(rows)}</table>"
+    if id_like_cols:
+        cols = ", ".join(id_like_cols)
+        html += (
+            f'<p class="note">Excluded from numeric charts as likely ID '
+            f"columns (every value is unique — not a measurement worth "
+            f"plotting a distribution of): {cols}.</p>"
+        )
+    return html
 
 
 def render_narrative_html(narrative_file: str | None) -> str:
@@ -243,7 +271,7 @@ def main():
     df = pd.read_csv(args.cleaned_csv)
     report = json.loads(Path(args.clean_report_json).read_text(encoding="utf-8"))
 
-    charts = build_charts(df)
+    charts, id_like_cols = build_charts(df)
     charts_html = "\n".join(
         f'<div class="card"><h2>{c["title"]}</h2>'
         f'<img src="data:image/png;base64,{c["img"]}" />'
@@ -256,7 +284,7 @@ def main():
         subtitle=f"Generated from {Path(args.cleaned_csv).name} · {len(df)} rows · {len(df.columns)} columns",
         narrative_html=render_narrative_html(args.narrative_file),
         cleaning_html=render_cleaning_html(report),
-        overview_html=render_overview_html(df),
+        overview_html=render_overview_html(df, id_like_cols),
         charts_html=charts_html or "<p>No charts could be generated from this dataset.</p>",
     )
 
