@@ -1,5 +1,7 @@
 # data-insight-report
 
+[![Tests](https://github.com/sihan3333/data-insight-report/actions/workflows/test.yml/badge.svg)](https://github.com/sihan3333/data-insight-report/actions/workflows/test.yml)
+
 A [Claude Skill](https://www.anthropic.com/news/skills) that turns a raw,
 messy tabular file (CSV / Excel) into a cleaned dataset and a visual
 insight report — automatically, without a person writing pandas code by
@@ -123,6 +125,19 @@ pip install -r requirements.txt
 python scripts/clean_data.py <input.csv|.xlsx> <output_dir>
 python scripts/build_report.py <output_dir>/cleaned.csv <output_dir>/clean_report.json <output_dir>/report.html --title "My Report"
 ```
+
+## Running tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -v
+```
+
+Tests target the parts of the pipeline with an actual right answer —
+does a duplicate row get dropped, does a mostly-text column stay
+uncoerced, does an ID-like column get excluded from the numeric charts —
+rather than asserting on exact chart pixels. They run in CI on every
+push (see the badge above and `.github/workflows/test.yml`).
 
 ## Design notes / things deliberately left alone
 
