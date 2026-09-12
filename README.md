@@ -101,9 +101,24 @@ histogrammed as if it were a measurement, *and* crowded a genuinely
 interesting column (`Fare`) out of the capped chart slots. Fixed in
 `build_report.py` by detecting ID-like columns structurally — any numeric
 column where every value is distinct — rather than relying on anyone to
-remember to check column names by hand. Small case study in why testing
-against real data (not just data written to satisfy your own test cases)
-matters.
+remember to check column names by hand.
+
+That fix wasn't the end of it. Scaling up to the [NYC Airbnb Open Data
+2019](https://raw.githubusercontent.com/4GeeksAcademy/data-preprocessing-project-tutorial/main/AB_NYC_2019.csv)
+dataset (48,895 real listings, ~7MB — see `examples/airbnb_report.html`)
+found a second, sneakier variant: `host_id` is numeric and *mostly*
+unique, but not perfectly — a host with 3 listings produces the same
+`host_id` 3 times. The pure-uniqueness rule missed it entirely: it got
+histogrammed, pulled into the correlation heatmap as if it were a real
+variable, and picked up 1,526 meaningless "IQR outliers" in the cleaning
+report. Fixed by adding a second, narrower rule — a name ending in `_id`
+combined with high-but-imperfect cardinality — factored into a shared
+`scripts/column_heuristics.py` so both `clean_data.py` and
+`build_report.py` use the same definition of "this is an identifier, not
+a measurement" instead of drifting apart. Two real datasets, two
+genuinely different failure modes, neither of which the synthetic
+example or a small dataset would have surfaced — the throughline being
+that testing at realistic scale keeps finding real things.
 
 ## Benchmarked against a baseline (with vs. without the skill)
 

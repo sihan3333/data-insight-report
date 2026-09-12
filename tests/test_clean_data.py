@@ -82,6 +82,20 @@ def test_outliers_are_flagged_not_removed():
     assert outlier_flags[0]["count"] == 1
 
 
+def test_foreign_key_style_id_column_is_not_flagged_for_outliers():
+    # host_id-style: numeric, ends in "_id", high cardinality, some
+    # repeats (a host with 2 listings) — every value is an arbitrary
+    # large-ish number, so a naive IQR pass finds "outliers" that mean
+    # nothing. Found on a real 49k-row dataset before this exclusion
+    # existed: host_id got flagged with 1,526 "outliers".
+    host_ids = [1001, 1002, 1003, 1001, 1004, 1005, 1006, 1007, 9999999]
+    df = pd.DataFrame({"host_id": host_ids, "n": range(len(host_ids))})
+    _, report = clean(df)
+
+    outlier_cols = [f["column"] for f in report["flagged"] if f["type"] == "outliers"]
+    assert "host_id" not in outlier_cols
+
+
 def test_constant_column_is_flagged():
     df = pd.DataFrame({"fiscal_year": [2024, 2024, 2024], "value": [1, 2, 3]})
     _, report = clean(df)

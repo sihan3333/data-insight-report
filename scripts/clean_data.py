@@ -26,6 +26,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from column_heuristics import split_id_like_columns
+
 
 def load(input_file: Path) -> pd.DataFrame:
     if input_file.suffix.lower() in (".xlsx", ".xls"):
@@ -108,8 +110,13 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
     # 6. Outliers on numeric columns via IQR — flagged, not removed,
     # since a legitimate extreme value is often the most interesting
-    # row in the dataset.
-    for c in df.select_dtypes(include=[np.number]).columns:
+    # row in the dataset. Skip identifier-like columns first (host_id,
+    # a row's own id, ...): "1,526 outliers" in an arbitrary ID number is
+    # not a finding, it's IQR math applied somewhere it doesn't mean
+    # anything — found on a real dataset where this actually happened.
+    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
+    measurement_cols, _id_like_cols = split_id_like_columns(df, numeric_cols)
+    for c in measurement_cols:
         series = df[c].dropna()
         if len(series) < 8:
             continue

@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from column_heuristics import split_id_like_columns
+
 # A small, colorblind-friendly categorical palette — swap for brand colors
 # if this report needs to match a specific look.
 PALETTE = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
@@ -52,23 +54,6 @@ def detect_datetime_column(df: pd.DataFrame):
             if parsed.notna().mean() > 0.9:
                 return c
     return None
-
-
-def split_id_like_columns(df: pd.DataFrame, numeric_cols: list[str]) -> tuple[list[str], list[str]]:
-    """A numeric column where every non-null value is unique (PassengerId,
-    order_id, ...) is almost never meaningful to histogram — it's an
-    identifier, not a measurement. Pull those out so they don't waste one
-    of the limited chart slots on a flat, uninformative bar. Detected
-    structurally (every value distinct) rather than by column name, so it
-    works regardless of naming convention or language."""
-    id_like, real = [], []
-    for c in numeric_cols:
-        non_null = df[c].dropna()
-        if len(non_null) > 1 and non_null.nunique() == len(non_null):
-            id_like.append(c)
-        else:
-            real.append(c)
-    return real, id_like
 
 
 def build_charts(df: pd.DataFrame) -> tuple[list[dict], list[str]]:
@@ -229,8 +214,10 @@ def render_overview_html(df: pd.DataFrame, id_like_cols: list[str]) -> str:
         cols = ", ".join(id_like_cols)
         html += (
             f'<p class="note">Excluded from numeric charts as likely ID '
-            f"columns (every value is unique — not a measurement worth "
-            f"plotting a distribution of): {cols}.</p>"
+            f"columns (either every value is unique, or the name and high "
+            f"cardinality look like a foreign key, e.g. host_id) — an "
+            f"identifier isn't a measurement worth plotting a distribution "
+            f"of: {cols}.</p>"
         )
     return html
 

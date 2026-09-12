@@ -1,0 +1,104 @@
+{
+  "rows_in": 48895,
+  "columns": [
+    "id",
+    "name",
+    "host_id",
+    "host_name",
+    "neighbourhood_group",
+    "neighbourhood",
+    "latitude",
+    "longitude",
+    "room_type",
+    "price",
+    "minimum_nights",
+    "number_of_reviews",
+    "last_review",
+    "reviews_per_month",
+    "calculated_host_listings_count",
+    "availability_365"
+  ],
+  "actions": [
+    {
+      "type": "strip_whitespace",
+      "columns": [
+        "name"
+      ]
+    }
+  ],
+  "flagged": [
+    {
+      "type": "missing_values",
+      "detail": {
+        "name": 16,
+        "host_name": 21,
+        "last_review": 10052,
+        "reviews_per_month": 10052
+      }
+    },
+    {
+      "type": "outliers",
+      "column": "latitude",
+      "count": 425,
+      "bounds": [
+        40.581,
+        40.873
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "longitude",
+      "count": 2833,
+      "bounds": [
+        -74.053,
+        -73.866
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "price",
+      "count": 2972,
+      "bounds": [
+        -90.0,
+        334.0
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "minimum_nights",
+      "count": 6607,
+      "bounds": [
+        -5.0,
+        11.0
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "number_of_reviews",
+      "count": 6021,
+      "bounds": [
+        -33.5,
+        58.5
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "reviews_per_month",
+      "count": 1793,
+      "bounds": [
+        -2.555,
+        4.765
+      ]
+    },
+    {
+      "type": "outliers",
+      "column": "calculated_host_listings_count",
+      "count": 7081,
+      "bounds": [
+        -0.5,
+        3.5
+      ]
+    }
+  ],
+  "rows_out": 48895
+}

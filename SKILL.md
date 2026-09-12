@@ -94,15 +94,23 @@ separate: run the cleaning script, then reason freely over what it found.
 - **No numeric columns at all**: the charts will lean on categorical bar
   charts only — that's fine, don't force a histogram onto nothing.
 - **A column that's actually an ID** (unique per row, e.g. `user_id`,
-  `order_number`): `build_report.py` detects this automatically (every
-  non-null value distinct) and excludes it from the numeric charts,
-  noting it in the overview instead of silently dropping it. You don't
-  need to catch this by hand — this was originally a "remember to check
-  column names" instruction, found to be an actual problem (not just a
-  hypothetical one) the first time this skill ran against a real dataset
-  (Titanic's `PassengerId` both got a meaningless histogram and crowded a
-  more interesting column out of the chart cap), and fixed structurally
-  instead of relying on every future run to remember it.
+  `order_number`): `scripts/column_heuristics.py` detects this
+  automatically and both scripts exclude it from numeric charts and IQR
+  outlier flagging, noting it in the overview instead of silently
+  dropping it. You don't need to catch this by hand — this started as a
+  "remember to check column names" instruction, found to be an actual
+  problem (not just a hypothetical one) twice on real datasets, each time
+  requiring a slightly stronger rule:
+  - Titanic's `PassengerId` (every value unique) got histogrammed and
+    crowded a more interesting column out of the chart cap — fixed by
+    detecting perfect uniqueness structurally.
+  - A 49k-row real Airbnb dataset's `host_id` (a foreign key — repeats
+    once per extra listing a host owns, so *not* perfectly unique) still
+    got histogrammed, pulled into the correlation heatmap, AND had 1,526
+    meaningless "IQR outliers" flagged in the cleaning report — fixed by
+    also treating a column as ID-like when its name ends in `_id` (or is
+    exactly `id`) and its cardinality is high (>50% distinct), which
+    catches a repeating foreign key that plain uniqueness misses.
 - **Sensitive data** (names, emails, financial account numbers): don't
   put raw sensitive values into chart labels or the narrative beyond what's
   needed to make the point — aggregate instead of exposing rows.
@@ -113,6 +121,8 @@ separate: run the cleaning script, then reason freely over what it found.
   exactly what it does and does not auto-fix)
 - `scripts/build_report.py` — chart selection + self-contained HTML report
   generation
+- `scripts/column_heuristics.py` — shared "is this column actually an
+  identifier, not a measurement" logic used by both scripts above
 - `references/chart_selection.md` — the reasoning behind which chart type
   gets picked for which column shape, useful if you need to add a new
   chart type or explain a choice to the user

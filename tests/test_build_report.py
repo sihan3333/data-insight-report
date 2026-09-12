@@ -31,6 +31,33 @@ def test_low_cardinality_numeric_column_is_not_treated_as_id():
     assert id_like == []
 
 
+def test_foreign_key_style_id_column_is_detected_despite_repeats():
+    # host_id-style: numeric, ends in "_id", high cardinality but NOT
+    # perfectly unique (a host with 2 listings produces 2 identical
+    # host_id values) — found on a real 49k-row Airbnb dataset, where the
+    # pure-uniqueness rule alone missed it and it got histogrammed
+    # alongside genuine measurements.
+    host_ids = [101, 102, 103, 104, 105, 101, 106, 107, 108, 109]  # 101 repeats
+    prices = [50, 75, 50, 100, 120, 75, 90, 60, 110, 95]  # a real measurement, also has repeats
+    df = pd.DataFrame({"host_id": host_ids, "price": prices})
+    real, id_like = split_id_like_columns(df, ["host_id", "price"])
+
+    assert "host_id" in id_like
+    assert real == ["price"]
+
+
+def test_high_cardinality_column_without_id_like_name_is_kept():
+    # Same shape (high cardinality, a couple of repeats) as the host_id
+    # case above, but named like a genuine measurement — the name check
+    # must not fire just because cardinality happens to be high.
+    values = [10.1, 10.1, 20.2, 30.3, 40.4, 50.5, 60.6, 70.7, 80.8, 90.9]
+    df = pd.DataFrame({"sensor_reading": values})
+    real, id_like = split_id_like_columns(df, ["sensor_reading"])
+
+    assert real == ["sensor_reading"]
+    assert id_like == []
+
+
 def test_build_charts_excludes_id_column_from_numeric_charts():
     df = pd.DataFrame({
         "passenger_id": list(range(1, 21)),

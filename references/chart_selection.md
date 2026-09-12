@@ -19,18 +19,29 @@ extend it or explain a choice without re-reading the code line by line.
 - **No pie charts.** Bar charts are easier to compare accurately; pies are
   avoided per general chart-design practice, not because they're
   unsupported.
-- **No forced chart on ID-like numeric columns.** A numeric column where
-  every non-null value is unique (customer ID, order number, row index)
-  is structurally detected in `split_id_like_columns()` and excluded from
-  the numeric distribution charts and the correlation heatmap — it's
-  noted in the report's overview instead of silently vanishing. This was
-  originally left as a "remember to check the column names" note for
-  whoever runs the report, until testing against a real dataset (Titanic)
-  showed it wasn't a hypothetical edge case: `PassengerId` got histogrammed
-  *and* pushed a more informative column (`Fare`) out of the capped chart
-  slots. Detecting structurally (uniqueness) rather than by name works
-  regardless of naming convention or language, and needs no one to
-  remember anything.
+- **No forced chart on ID-like numeric columns.** `split_id_like_columns()`
+  (in `scripts/column_heuristics.py`, shared with `clean_data.py`) excludes
+  these from the numeric distribution charts and the correlation heatmap
+  — noted in the report's overview instead of silently vanishing. Two
+  rules, added at two different points because one wasn't enough:
+  1. **Every non-null value is unique** — a row's own id, an order
+     number. Detected structurally regardless of naming convention or
+     language. This was originally left as a "remember to check the
+     column names" note for whoever runs the report, until testing
+     against a real dataset (Titanic) showed it wasn't hypothetical:
+     `PassengerId` got histogrammed *and* pushed a more informative
+     column (`Fare`) out of the capped chart slots.
+  2. **Name ends in `_id` (or is exactly `id`) AND cardinality is high
+     (>50% distinct) but not perfect.** Needed for foreign-key-style
+     columns — `host_id` in a listings table repeats once per extra
+     listing that host owns, so rule 1 alone doesn't catch it. Found on
+     a real 49k-row Airbnb dataset: `host_id` got histogrammed, polluted
+     the correlation heatmap with a meaningless variable, AND had 1,526
+     "IQR outliers" flagged in `clean_report.json` — a number that looks
+     like a finding but is really just IQR math applied to arbitrary
+     large integers. This rule does rely on naming convention on purpose:
+     uniqueness alone genuinely can't tell "host_id" apart from a real
+     measurement that happens to vary a lot.
 
 ## Extending it
 
