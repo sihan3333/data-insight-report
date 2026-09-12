@@ -39,7 +39,8 @@ separate: run the cleaning script, then reason freely over what it found.
    mention or act on. Never silently impute missing values yourself either
    — if it's worth filling in, say so and explain the method you used.
 
-3. **Generate the report.**
+3. **Generate the report — twice.** The first run is so you can see what
+   the data actually looks like; the second folds your analysis in.
    ```bash
    python scripts/build_report.py <output_dir>/cleaned.csv <output_dir>/clean_report.json <output_dir>/report.html --title "<a title describing the dataset>"
    ```
@@ -64,12 +65,26 @@ separate: run the cleaning script, then reason freely over what it found.
    - If genuinely unsure, produce the HTML report and ask which final
      format they want rather than guessing and redoing work.
 
-5. **Write the narrative yourself.** The scripts produce charts and raw
-   numbers, not conclusions. Look at what `build_report.py` generated and
-   at `clean_report.json`, then add 3-6 sentences of actual analysis
-   somewhere prominent (top of the report, or in your chat reply) — what
-   stands out, what's surprising, what you'd check next. A report with
-   charts and no interpretation is half the deliverable.
+5. **Write the narrative, then fold it back in — don't hand-edit the HTML.**
+   The scripts produce charts and raw numbers, not conclusions. Look at the
+   report from step 3 and at `clean_report.json`, then write 3-6 sentences
+   of actual analysis — what stands out, what's surprising, what looks
+   like a data-entry artifact vs. a real pattern, what you'd check next. A
+   report with charts and no interpretation is half the deliverable.
+
+   Put that analysis in a small HTML fragment file (a `<p>` or two, maybe
+   a `<ul><li>` list — stick to tags already used elsewhere in the
+   report), then re-run the same command with `--narrative-file`:
+   ```bash
+   python scripts/build_report.py <output_dir>/cleaned.csv <output_dir>/clean_report.json <output_dir>/report.html --title "..." --narrative-file <path-to-your-fragment>
+   ```
+   This renders it as a "Key findings" card at the top of the report.
+   Regenerating from scratch is cheap and deterministic — do this instead
+   of grepping the generated `report.html` for an insertion point and
+   editing it by hand. That approach works until it doesn't: the anchor
+   you match on can appear more than once, or not quite where you
+   expected, and a bad edit silently produces a corrupted report instead
+   of an error you'd notice.
 
 ## Edge cases worth handling deliberately
 

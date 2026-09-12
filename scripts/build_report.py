@@ -143,6 +143,7 @@ HTML_TEMPLATE = """<!doctype html>
   .subtitle {{ color:#6b6b70; margin-top:0; margin-bottom:28px; }}
   .card {{ background:#fff; border:1px solid #e4e4e7; border-radius:12px; padding:20px 24px; margin-bottom:20px; }}
   .card h2 {{ font-size:16px; margin-top:0; }}
+  .card.narrative {{ border-left:4px solid #4C72B0; }}
   .grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px; }}
   .grid .card img {{ max-width:100%; display:block; }}
   .note {{ font-size:13px; color:#6b6b70; margin-top:8px; }}
@@ -157,6 +158,8 @@ HTML_TEMPLATE = """<!doctype html>
 <div class="wrap">
   <h1>{title}</h1>
   <p class="subtitle">{subtitle}</p>
+
+  {narrative_html}
 
   <div class="card">
     <h2>Data cleaning summary</h2>
@@ -204,12 +207,37 @@ def render_overview_html(df: pd.DataFrame) -> str:
     return f"<table>{''.join(rows)}</table>"
 
 
+def render_narrative_html(narrative_file: str | None) -> str:
+    if not narrative_file:
+        return ""
+    text = Path(narrative_file).read_text(encoding="utf-8").strip()
+    if not text:
+        return ""
+    return f'<div class="card narrative"><h2>Key findings</h2>{text}</div>'
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cleaned_csv")
     ap.add_argument("clean_report_json")
     ap.add_argument("output_html")
     ap.add_argument("--title", default="Data Insight Report")
+    ap.add_argument(
+        "--narrative-file",
+        default=None,
+        help=(
+            "Path to an HTML fragment with your written analysis (a few "
+            "<p> paragraphs and/or a <ul><li> list — stick to the tags "
+            "already used elsewhere in this report). Rendered as a "
+            "'Key findings' card right at the top, above the cleaning "
+            "summary. Write this file AFTER looking at the charts this "
+            "script produces on a first run, then re-run with this flag "
+            "to fold it in — the whole regenerate is cheap and "
+            "deterministic, and it avoids hand-editing the generated "
+            "HTML (fragile: easy to match the wrong anchor and corrupt "
+            "the file)."
+        ),
+    )
     args = ap.parse_args()
 
     df = pd.read_csv(args.cleaned_csv)
@@ -226,13 +254,15 @@ def main():
     html = HTML_TEMPLATE.format(
         title=args.title,
         subtitle=f"Generated from {Path(args.cleaned_csv).name} · {len(df)} rows · {len(df.columns)} columns",
+        narrative_html=render_narrative_html(args.narrative_file),
         cleaning_html=render_cleaning_html(report),
         overview_html=render_overview_html(df),
         charts_html=charts_html or "<p>No charts could be generated from this dataset.</p>",
     )
 
     Path(args.output_html).write_text(html, encoding="utf-8")
-    print(f"wrote {args.output_html} with {len(charts)} charts")
+    tag = " (with narrative)" if args.narrative_file else " (no narrative yet)"
+    print(f"wrote {args.output_html} with {len(charts)} charts{tag}")
 
 
 if __name__ == "__main__":
