@@ -28,7 +28,7 @@ separate: run the cleaning script, then reason freely over what it found.
 
 2. **Clean it deterministically.**
    ```bash
-   python scripts/clean_data.py <input_file> <output_dir>
+   python scripts/clean_data.py <input_file> <output_dir> [--sheet NAME_OR_INDEX]
    ```
    This writes `cleaned.csv` and `clean_report.json` to `<output_dir>`.
    Read `clean_report.json` — it lists every auto-fix applied (dropped
@@ -38,6 +38,17 @@ separate: run the cleaning script, then reason freely over what it found.
    this dataset and this user's goal, whether they matter enough to
    mention or act on. Never silently impute missing values yourself either
    — if it's worth filling in, say so and explain the method you used.
+
+   Also check `clean_report.json` for two keys that only appear when
+   something needed a decision on your (or the script's) behalf: an
+   `encoding_used` note means the file wasn't plain UTF-8 (common for
+   exports from Chinese-locale systems, handled automatically — GBK,
+   Big5, and a couple of others are tried); a `multiple_sheets` note
+   means the Excel workbook had more than one sheet and the script picked
+   the one with the most rows, on the assumption a small sheet is more
+   likely a cover/notes page than the real data. If that guess looks
+   wrong for this file (check `multiple_sheets.available`), re-run with
+   `--sheet <name>` rather than accepting it silently.
 
 3. **Generate the report — twice.** The first run is so you can see what
    the data actually looks like; the second folds your analysis in.
@@ -111,6 +122,15 @@ separate: run the cleaning script, then reason freely over what it found.
     also treating a column as ID-like when its name ends in `_id` (or is
     exactly `id`) and its cardinality is high (>50% distinct), which
     catches a repeating foreign key that plain uniqueness misses.
+- **Non-UTF-8 file, or Chinese/Japanese/Korean text in the data**:
+  `clean_data.py` already tries several encodings (see above) rather than
+  crashing on the first non-UTF-8 byte, and `build_report.py` auto-detects
+  an installed CJK-capable font so chart labels don't render as boxes —
+  both were real failures on a real file, not theoretical. If a report
+  still shows box glyphs, the machine running it doesn't have any of the
+  fonts `build_report.py` checks for (see `_CJK_FONT_CANDIDATES`) — that's
+  an environment gap, not something to silently work around by e.g.
+  translating the labels.
 - **Sensitive data** (names, emails, financial account numbers): don't
   put raw sensitive values into chart labels or the narrative beyond what's
   needed to make the point — aggregate instead of exposing rows.

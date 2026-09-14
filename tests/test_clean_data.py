@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.clean_data import clean
+from scripts.clean_data import clean, load
 
 
 def test_exact_duplicate_rows_are_dropped_and_counted():
@@ -125,3 +125,66 @@ def test_clean_data_on_already_clean_input_makes_no_changes():
     assert len(cleaned) == 3
     assert report["actions"] == []
     assert report["flagged"] == []
+
+
+# --- load(): encoding + multi-sheet Excel handling -------------------------
+# Both of these were real, found-not-assumed bugs: a GBK-encoded CSV
+# (common from Chinese-locale exports) crashed outright, and a workbook
+# with a small notes sheet before the real data silently read the wrong
+# one with no error at all.
+
+def test_load_falls_back_to_gbk_for_non_utf8_csv(tmp_path):
+    df = pd.DataFrame({"姓名": ["张伟", "李娜"], "薪资": [12000, 15500]})
+    path = tmp_path / "employees_gbk.csv"
+    df.to_csv(path, index=False, encoding="gbk")
+
+    loaded, load_info = load(path)
+
+    assert list(loaded["姓名"]) == ["张伟", "李娜"]
+    assert load_info["encoding_used"] == "gbk"
+
+
+def test_load_plain_utf8_csv_records_no_encoding_note(tmp_path):
+    df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    path = tmp_path / "plain.csv"
+    df.to_csv(path, index=False, encoding="utf-8")
+
+    _, load_info = load(path)
+
+    assert "encoding_used" not in load_info
+
+
+def test_load_picks_largest_sheet_in_multi_sheet_workbook(tmp_path):
+    path = tmp_path / "workbook.xlsx"
+    with pd.ExcelWriter(path) as writer:
+        pd.DataFrame({"note": ["see data tab"]}).to_excel(writer, sheet_name="notes", index=False)
+        pd.DataFrame({"product": ["A", "B", "C"], "revenue": [100, 200, 300]}).to_excel(
+            writer, sheet_name="data", index=False
+        )
+
+    loaded, load_info = load(path)
+
+    assert list(loaded.columns) == ["product", "revenue"]
+    assert load_info["multiple_sheets"]["used"] == "data"
+    assert set(load_info["multiple_sheets"]["available"]) == {"notes", "data"}
+
+
+def test_load_explicit_sheet_argument_is_respected(tmp_path):
+    path = tmp_path / "workbook.xlsx"
+    with pd.ExcelWriter(path) as writer:
+        pd.DataFrame({"note": ["see data tab"]}).to_excel(writer, sheet_name="notes", index=False)
+        pd.DataFrame({"product": ["A", "B", "C"]}).to_excel(writer, sheet_name="data", index=False)
+
+    loaded, load_info = load(path, sheet="notes")
+
+    assert list(loaded.columns) == ["note"]
+    assert "multiple_sheets" not in load_info  # an explicit choice isn't a judgment call to flag
+
+
+def test_load_single_sheet_workbook_has_no_multi_sheet_note(tmp_path):
+    path = tmp_path / "workbook.xlsx"
+    pd.DataFrame({"a": [1, 2]}).to_excel(path, index=False)
+
+    _, load_info = load(path)
+
+    assert "multiple_sheets" not in load_info

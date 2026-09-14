@@ -120,6 +120,37 @@ genuinely different failure modes, neither of which the synthetic
 example or a small dataset would have surfaced — the throughline being
 that testing at realistic scale keeps finding real things.
 
+## Robustness: files that aren't a clean single-sheet UTF-8 CSV
+
+Three more real failures, found by deliberately trying inputs a bit
+outside the happy path rather than assuming they'd just work:
+
+- **Non-UTF-8 encoding.** A CSV exported from a Chinese-locale system
+  (GBK is the common case — this is what Excel on Chinese Windows saves
+  as by default) crashed `clean_data.py` outright with a
+  `UnicodeDecodeError` before this fix. It now tries `utf-8-sig`, `utf-8`,
+  `gbk`, `big5`, then `latin-1` in order (the last one never fails, so
+  the chain always terminates) and records which one actually worked in
+  `clean_report.json` as `encoding_used` — surfaced, not silently applied.
+- **Multi-sheet Excel workbooks.** A `.xlsx` with a small "notes"/cover
+  sheet ahead of the real data got read as that notes sheet with zero
+  indication anything was wrong — `pd.read_excel` defaults to the first
+  sheet. Now picks the sheet with the most rows (a reasonable proxy for
+  "the actual data") and always records the choice plus every other
+  sheet name in `clean_report.json` under `multiple_sheets`, so a wrong
+  guess is visible and overridable with `--sheet`.
+- **Chinese/Japanese/Korean text in chart labels.** matplotlib's default
+  font has no CJK glyphs at all — every Chinese label in every chart
+  rendered as a row of missing-glyph boxes. `build_report.py` now checks
+  for a handful of common CJK-capable fonts (Microsoft YaHei, SimHei,
+  PingFang SC, Noto Sans CJK SC, ...) and uses whichever one is actually
+  installed.
+
+None of these showed up on the Titanic or Airbnb datasets above — both
+happen to be plain UTF-8, single-sheet, English-language files. Found
+instead by generating a GBK-encoded Chinese employee CSV and a two-sheet
+Excel workbook specifically to probe past that happy path.
+
 ## Benchmarked against a baseline (with vs. without the skill)
 
 Rather than assume the skill is better because it exists, it was compared

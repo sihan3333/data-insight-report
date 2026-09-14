@@ -10,17 +10,20 @@ and it produces a machine-readable diff of exactly what changed — which
 the report generator and the human reviewing it both need.
 
 Usage:
-    python clean_data.py <input_file> <output_dir>
+    python clean_data.py <input_file> <output_dir> [--sheet NAME_OR_INDEX]
 
 Produces in <output_dir>:
     cleaned.csv        - the cleaned dataset
     clean_report.json  - structured summary of every change made and every
                           issue that was flagged but NOT auto-fixed
                           (judgment calls belong to the person reading the
-                          report, not to this script)
+                          report, not to this script). Also carries
+                          encoding_used / multiple_sheets when the input
+                          wasn't a plain single-sheet UTF-8 file — see
+                          load() below.
 """
+import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -29,14 +32,85 @@ import pandas as pd
 from column_heuristics import split_id_like_columns
 
 
-def load(input_file: Path) -> pd.DataFrame:
+# Tried in order until one decodes without error. utf-8 covers the vast
+# majority of modern exports; gbk/big5 cover Chinese-locale Windows
+# exports (a very common real-world source of "this file won't open"
+# reports); latin-1 never raises a decode error at all (every byte maps
+# to *some* character), so it's the guaranteed-to-terminate last resort
+# rather than a confident guess — which is why the encoding actually used
+# gets recorded in load_info rather than applied silently.
+CSV_ENCODING_CANDIDATES = ["utf-8-sig", "utf-8", "gbk", "big5", "latin-1"]
+
+
+# utf-8-sig decodes a plain (BOM-less) UTF-8 file just as well as a
+# BOM'd one — it's tried first because it's the strictly safer of the
+# two, not because it's unusual. Only note the encoding when it's
+# something OTHER than plain UTF-8, so a completely ordinary file
+# doesn't get flagged just because utf-8-sig happened to be the one
+# that succeeded.
+_ORDINARY_UTF8_ENCODINGS = {"utf-8", "utf-8-sig"}
+
+
+def _read_csv_with_encoding_fallback(input_file: Path) -> tuple[pd.DataFrame, str | None]:
+    last_err: Exception | None = None
+    for enc in CSV_ENCODING_CANDIDATES:
+        try:
+            # Let pandas sniff the delimiter first...
+            df = pd.read_csv(input_file, sep=None, engine="python", encoding=enc)
+            return df, (enc if enc not in _ORDINARY_UTF8_ENCODINGS else None)
+        except UnicodeDecodeError as e:
+            last_err = e
+            continue
+        except Exception:
+            # ...not an encoding problem (e.g. sniffing failed on an
+            # unusual delimiter) — retry once as plain comma-separated
+            # under this same encoding before moving on.
+            try:
+                df = pd.read_csv(input_file, encoding=enc)
+                return df, (enc if enc not in _ORDINARY_UTF8_ENCODINGS else None)
+            except UnicodeDecodeError as e2:
+                last_err = e2
+                continue
+    raise last_err  # pragma: no cover — latin-1 above never actually gets here
+
+
+def load(input_file: Path, sheet: str | int | None = None) -> tuple[pd.DataFrame, dict]:
+    """Returns (dataframe, load_info) — load_info notes anything that
+    wasn't a simple, unambiguous "just read the file" (a non-UTF-8
+    encoding, or a choice made between multiple Excel sheets) so it can
+    be surfaced in clean_report.json instead of silently applied."""
+    load_info: dict = {}
+
     if input_file.suffix.lower() in (".xlsx", ".xls"):
-        return pd.read_excel(input_file)
-    # Let pandas sniff the delimiter; fall back to comma.
-    try:
-        return pd.read_csv(input_file, sep=None, engine="python")
-    except Exception:
-        return pd.read_csv(input_file)
+        xl = pd.ExcelFile(input_file)
+        sheet_names = xl.sheet_names
+        if sheet is not None:
+            chosen = sheet
+        elif len(sheet_names) == 1:
+            chosen = sheet_names[0]
+        else:
+            # A workbook with multiple sheets very often has a small
+            # "notes"/"readme"/cover sheet ahead of the actual data (this
+            # exact pattern — a notes sheet before the real data — showed
+            # up on a real test file). Defaulting to "the first sheet"
+            # would silently pick that notes sheet; "the sheet with the
+            # most rows" is a much better guess at which one is the data,
+            # and either way the choice gets flagged so it isn't silent.
+            row_counts = {name: xl.parse(name).shape[0] for name in sheet_names}
+            chosen = max(row_counts, key=row_counts.get)
+            load_info["multiple_sheets"] = {
+                "used": chosen,
+                "available": sheet_names,
+                "note": "picked the sheet with the most rows; pass --sheet to choose a different one",
+            }
+        df = xl.parse(chosen)
+        load_info.setdefault("sheet_used", chosen)
+        return df, load_info
+
+    df, encoding_used = _read_csv_with_encoding_fallback(input_file)
+    if encoding_used:
+        load_info["encoding_used"] = encoding_used
+    return df, load_info
 
 
 def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
@@ -146,23 +220,41 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage: clean_data.py <input_file> <output_dir>", file=sys.stderr)
-        sys.exit(1)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("input_file", type=Path)
+    ap.add_argument("output_dir", type=Path)
+    ap.add_argument(
+        "--sheet",
+        default=None,
+        help="Excel sheet name or index to read, for a workbook with more "
+             "than one sheet. Omit to auto-pick the sheet with the most "
+             "rows (see 'multiple_sheets' in clean_report.json for what "
+             "else was available).",
+    )
+    args = ap.parse_args()
 
-    input_file = Path(sys.argv[1])
-    output_dir = Path(sys.argv[2])
-    output_dir.mkdir(parents=True, exist_ok=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load(input_file)
+    sheet = args.sheet
+    if sheet is not None and sheet.isdigit():
+        sheet = int(sheet)
+
+    df, load_info = load(args.input_file, sheet=sheet)
     cleaned, report = clean(df)
+    report.update(load_info)  # encoding_used / multiple_sheets, if any
 
-    cleaned.to_csv(output_dir / "cleaned.csv", index=False)
-    (output_dir / "clean_report.json").write_text(
-        json.dumps(report, indent=2, default=str), encoding="utf-8"
+    cleaned.to_csv(args.output_dir / "cleaned.csv", index=False)
+    (args.output_dir / "clean_report.json").write_text(
+        json.dumps(report, indent=2, default=str, ensure_ascii=False), encoding="utf-8"
     )
     print(f"cleaned {report['rows_in']} -> {report['rows_out']} rows; "
           f"{len(report['actions'])} auto-fixes, {len(report['flagged'])} items flagged for review")
+    if load_info.get("encoding_used"):
+        print(f"note: read using '{load_info['encoding_used']}' encoding (not utf-8)")
+    if "multiple_sheets" in load_info:
+        ms = load_info["multiple_sheets"]
+        print(f"note: workbook had {len(ms['available'])} sheets {ms['available']}; "
+              f"used '{ms['used']}' (most rows) — pass --sheet to pick a different one")
 
 
 if __name__ == "__main__":

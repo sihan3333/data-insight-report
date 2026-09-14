@@ -21,6 +21,7 @@ from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -33,6 +34,27 @@ PALETTE = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
 MAX_NUMERIC_CHARTS = 6
 MAX_CATEGORICAL_CHARTS = 4
 MAX_CATEGORY_BARS = 10
+
+# matplotlib's default font (DejaVu Sans) has no CJK glyphs — a column
+# name, category, or narrative snippet in Chinese/Japanese/Korean would
+# render as a row of missing-glyph boxes in every chart. Use whichever
+# CJK-capable font this machine actually has (checked in a fixed order
+# rather than picking arbitrarily) instead of silently producing charts
+# with unreadable labels. If none of these are installed (e.g. a bare-bones
+# Linux CI image), CJK text will still show as boxes — there's no way
+# around that without bundling a font file, which trades a few KB of
+# missing glyphs for several MB of repo size; not worth it for a skill
+# meant to run on a normal desktop or dev machine.
+_CJK_FONT_CANDIDATES = [
+    "Microsoft YaHei", "SimHei", "Microsoft JhengHei", "SimSun",  # Windows
+    "PingFang SC", "Heiti SC", "STHeiti",  # macOS
+    "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Zen Hei",  # Linux
+]
+_installed_fonts = {f.name for f in fm.fontManager.ttflist}
+_cjk_font = next((f for f in _CJK_FONT_CANDIDATES if f in _installed_fonts), None)
+if _cjk_font:
+    plt.rcParams["font.sans-serif"] = [_cjk_font, "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False  # CJK fonts often lack the typographic minus glyph
 
 
 def fig_to_base64(fig) -> str:
@@ -191,12 +213,12 @@ def render_cleaning_html(report: dict) -> str:
     if report["actions"]:
         parts.append("<p><strong>Auto-fixed:</strong></p><div>")
         for a in report["actions"]:
-            parts.append(f'<span class="tag">{json.dumps(a, default=str)}</span>')
+            parts.append(f'<span class="tag">{json.dumps(a, default=str, ensure_ascii=False)}</span>')
         parts.append("</div>")
     if report["flagged"]:
         parts.append("<p><strong>Flagged for your review (not auto-changed):</strong></p><div>")
         for f in report["flagged"]:
-            parts.append(f'<span class="tag flag">{json.dumps(f, default=str)}</span>')
+            parts.append(f'<span class="tag flag">{json.dumps(f, default=str, ensure_ascii=False)}</span>')
         parts.append("</div>")
     if not report["actions"] and not report["flagged"]:
         parts.append("<p>No issues found — data was already clean.</p>")
